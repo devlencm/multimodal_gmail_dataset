@@ -1,0 +1,6 @@
+.ipynb_checkpoints/
+features/
+model_scores/
+lstm_models/
+models/
+adversarial_results/
