@@ -180,9 +180,9 @@ if __name__ == "__main__":
         traj_edge_times_all, columns=["start", "end", "session", "user"]
     )
 
-    traj_edge_times_df.to_csv("traj_edge_times.csv", index=False)
+    traj_edge_times_df.to_csv("../../features/traditional/traj_edge_times.csv", index=False)
 
     mouse_features_df = pd.concat(feature_dfs, ignore_index=True)
-    # mouse_features_df.to_csv("mouse_features.csv", index=False)
+    mouse_features_df.to_csv("../../features/traditional/mouse_features.csv", index=False)
 
     print(f"Saved {len(mouse_features_df)} trajectory feature rows.")

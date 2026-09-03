@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import os
 import tqdm
 
-def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="test"):
+def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="val"):
     # Get sample start times, model scores, labels, and corresponding modality IDs
     times = np.array(m[split]["start"])
     scores = np.array(m[split]["scores"])
@@ -275,14 +275,14 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
         fused_data = merge_modalities(user, modalities)
 
         # Get the scores + labels for each N-minute window (single and multi modality)
-        labels_test, scores_test, modality_labels_test, modality_scores_test = (
+        labels_val, scores_val, modality_labels_val, modality_scores_val = (
             window_and_fuse(fused_data, user_weight_dict, window_min, split="test")
         )
 
         # For each individual modality, get their scores and labels, fuse
         for modality_name in modalities:
-            labels_modality = modality_labels_test[modality_name]
-            scores_modality = modality_scores_test[modality_name]
+            labels_modality = modality_labels_val[modality_name]
+            scores_modality = modality_scores_val[modality_name]
 
             # Create genuine and impostor binary labels based on current user
             binary_labels = (labels_modality == user_int).astype(int)
@@ -298,14 +298,14 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
             modality_results[modality_name].append({"User": user, "EER": eer, "AUC": auc})
 
         # Create genuine and impostor binary labels based on current user across all modalities
-        binary_labels_multi = (labels_test == user_int).astype(int)
+        binary_labels_multi = (labels_val == user_int).astype(int)
 
         # Extend global_fusion for ROC
         global_fusion["y"].extend(binary_labels_multi)
-        global_fusion["s"].extend(scores_test)
+        global_fusion["s"].extend(scores_val)
 
         # Compute fusion EER and AUC
-        eer, auc = compute_eer_auc(binary_labels_multi, scores_test)
+        eer, auc = compute_eer_auc(binary_labels_multi, scores_val)
 
         # Append fusion results
         fusion_results.append({"User": user, "EER": eer, "AUC": auc})
@@ -359,7 +359,7 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
     plt.title(f"{model} Inter-Session ROC Curves ({window_min} min)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"{model}_roc_curves_{window_min}min_inter.png")
+    plt.savefig(f"roc_plots/{model}_roc_curves_{window_min}min_inter.png")
     plt.close()
 
 
@@ -369,7 +369,7 @@ def load_intra_modalities(model="RF"):
     modalities = {}
 
     # Iterate over 4 modalities
-    for modality_name in ["mouse", "keystroke", "scroll"]:
+    for modality_name in ["mouse", "widget", "keystroke", "scroll"]:
         modality_dir = os.path.join("model_scores", model, modality_name)
 
         upper_name = modality_name.capitalize()
@@ -502,7 +502,7 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
             fused_data = merge_modalities_intra(user, session, modalities)
 
             # Get the scores + labels for each N-minute window (single and multi modality)
-            labels_test, scores_test, modality_labels_test, modality_scores_test = (
+            labels_val, scores_val, modality_labels_val, modality_scores_val = (
                 window_and_fuse(
                     fused_data, user_weight_dict, window_min, split="test"
                 )
@@ -510,8 +510,8 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
 
             # For each individual modality, get their scores and labels, fuse
             for modality_name in modalities:
-                labels_modality = modality_labels_test[modality_name]
-                scores_modality = modality_scores_test[modality_name]
+                labels_modality = modality_labels_val[modality_name]
+                scores_modality = modality_scores_val[modality_name]
 
                 # Create genuine and impostor binary labels based on current user
                 binary_labels = (labels_modality == user_int).astype(int)
@@ -532,17 +532,17 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
                 )
 
             # Create genuine and impostor binary labels based on current user across all modalities
-            binary_labels_test = (labels_test == user_int).astype(int)
+            binary_labels_val = (labels_val == user_int).astype(int)
 
-            if len(np.unique(binary_labels_test)) < 2:
+            if len(np.unique(binary_labels_val)) < 2:
                 continue
 
             # Extend global_fusion for ROC
-            global_fusion["y"].extend(binary_labels_test)
-            global_fusion["s"].extend(scores_test)
+            global_fusion["y"].extend(binary_labels_val)
+            global_fusion["s"].extend(scores_val)
 
             # Compute fusion EER and AUC
-            eer, auc = compute_eer_auc(binary_labels_test, scores_test)
+            eer, auc = compute_eer_auc(binary_labels_val, scores_val)
 
             # Store session-level fusion results
             fusion_results.append(
@@ -563,7 +563,7 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
             ]
         )
         df = pd.concat([df, mean_row], ignore_index=True)
-        df.to_csv(f"results/{modality_name}_fusion/{modality_name}_results_{model}_{window_min}_intra_test.csv", index=False)
+        df.to_csv(f"results/{modality_name.lower()}_fusion/{modality_name}_results_{model}_{window_min}_intra_test.csv", index=False)
 
     # Save session-level fusion results
     df_fusion = pd.DataFrame(fusion_results)
@@ -598,16 +598,16 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
     plt.title(f"{model} Intra-Session ROC Curves ({window_min} min)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"{model}_roc_curves_{window_min}min_intra.png")
+    plt.savefig(f"roc_plots/{model}_roc_curves_{window_min}min_intra.png")
     plt.close()
 
 
 # RUN FUSION EXPERIMENTS
 
 # Inter-session
-for i in range(1, 6):
-    multi_modal_fusion_inter(window_min=i, model="RF")
+# for i in range(1, 6):
+#     multi_modal_fusion_inter(window_min=i, model="RF")
 
 # Intra-session
 for i in range(1, 6):
-    multi_modal_fusion_intra(window_min=i, model="RF")
+    multi_modal_fusion_intra(window_min=i, model="SVM")

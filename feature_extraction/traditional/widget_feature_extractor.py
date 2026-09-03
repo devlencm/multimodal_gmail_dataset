@@ -129,7 +129,7 @@ total_rows, all_widgets = hot_encode_with_durations(
 columns = ['User_ID', 'session', 'start', 'end'] + list(all_widgets) + [str(w)+'_dur' for w in all_widgets]
 
 out = pd.DataFrame(total_rows, columns=columns)
-out.to_csv('widget_features.csv', index=False)
+out.to_csv('../../features/traditional/widget_features.csv', index=False)
 
 t1 = time.time()
 print(t1 - t0)

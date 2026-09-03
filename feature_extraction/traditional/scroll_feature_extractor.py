@@ -115,7 +115,7 @@ def main():
 
     print(len(big_dataframe))
 
-    big_dataframe.to_csv("scroll_features.csv", index=False)
+    big_dataframe.to_csv("../../features/traditional/scroll_features.csv", index=False)
 
 
 if __name__ == "__main__":

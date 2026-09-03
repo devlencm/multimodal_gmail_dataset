@@ -4,8 +4,8 @@ import pingouin as pg
 from scipy.stats import wilcoxon, mannwhitneyu, ttest_rel, shapiro
 
 # Load CSVs
-df_1 = pd.read_csv("results/mouse_fusion/Mouse_results_SVM_5_inter_test.csv")
-df_2 = pd.read_csv("results/multimodal/Fusion_results_SVM_5_inter_test.csv")
+df_1 = pd.read_csv("results/mouse_fusion/Mouse_results_RF_1_intra_test.csv")
+df_2 = pd.read_csv("results/multimodal/Fusion_results_RF_1_intra_test.csv")
 
 # Remove the 'Mean' row
 df_1 = df_1[df_1["User"] != "Mean"]

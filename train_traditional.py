@@ -45,7 +45,7 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
         skipped_users = []
 
         # Read modality data CSV
-        data = pd.read_csv(file).fillna(value=0)
+        data = pd.read_csv(os.path.join("features/traditional/", file)).fillna(value=0)
 
         # Get user IDs
         all_users = np.unique(data['User_ID'])
@@ -65,7 +65,7 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
         )
 
         # Loop through data splits
-        for user, session, train_idx, test_idx in split_list:
+        for user, session, train_idx, val_idx in split_list:
             data_users = data.copy()
             feat_cols = data_users.columns.to_list()[4:]
 
@@ -78,12 +78,12 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
             X_train = data_users.loc[train_idx, feat_cols].values
             y_train = (data_users.loc[train_idx, "User_ID"] == user).astype(int).values
             
-            X_test = data_users.loc[test_idx, feat_cols].values
-            y_val = (data_users.loc[test_idx, "User_ID"] == user).astype(int).values
+            X_val = data_users.loc[val_idx, feat_cols].values
+            y_val = (data_users.loc[val_idx, "User_ID"] == user).astype(int).values
 
             # Oversample genuine samples to size of impostor
             train_idx = np.asarray(train_idx)
-            test_idx = np.asarray(test_idx)
+            val_idx = np.asarray(val_idx)
             
             X_gen_train = X_train[y_train == 1]
             X_imp_train = X_train[y_train == 0]
@@ -95,14 +95,14 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
             y_train = np.concatenate((np.ones(len(X_gen_train_bal)), np.zeros(len(X_imp_train))))
             
             if session is None:  # Inter-session, session not set
-                print(f"User {user}: Train {len(X_train)} rows, Test {len(X_test)} rows")
+                print(f"User {user}: Train {len(X_train)} rows, Test {len(X_val)} rows")
             else:  # Intra-session, show session specific output
-                print(f"User {user}, Session {session}: Train {len(X_train)} rows, Test {len(X_test)} rows")
+                print(f"User {user}, Session {session}: Train {len(X_train)} rows, Test {len(X_val)} rows")
 
             # Scale 0-1
             scaler = MinMaxScaler(feature_range=(0, 1))
             X_train = scaler.fit_transform(X_train_bal)
-            X_test = scaler.transform(X_test)
+            X_val = scaler.transform(X_val)
 
             if model == "GBM":
                 clf = GradientBoostingClassifier(n_estimators=300, max_depth=5)
@@ -110,7 +110,7 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
             elif model == "SVM":
                 X_train = cp.asarray(X_train)
                 y_train = cp.asarray(y_train)
-                X_test = cp.asarray(X_test)
+                X_val = cp.asarray(X_val)
                 
                 clf = cuSVC(kernel="rbf", probability=True)
 
@@ -135,40 +135,33 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
             joblib.dump(scaler, os.path.join(save_dir, "scaler.joblib"))
 
             # Get val set model output scores
-            test_scores = clf.predict_proba(X_test)[:, 1]
+            val_scores = clf.predict_proba(X_val)[:, 1]
             
             # Convert CuPy arrays back to NumPy for sklearn metrics/saving
             if model == "SVM":
-                train_scores = cp.asnumpy(train_scores)
-                test_scores = cp.asnumpy(test_scores)
+                val_scores = cp.asnumpy(val_scores)
                 y_train = cp.asnumpy(y_train)
                 y_val = cp.asnumpy(y_val)
-                
-            fpr, tpr, thres = roc_curve(y_train, train_scores)
-            train_eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
-            train_auc = roc_auc_score(y_train, train_scores)
 
-            fpr, tpr, thres = roc_curve(y_val, test_scores)
-            test_eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
-            test_auc = roc_auc_score(y_val, test_scores)
+            fpr, tpr, thres = roc_curve(y_val, val_scores)
+            val_eer = brentq(lambda x: 1.0 - x - interp1d(fpr, tpr)(x), 0.0, 1.0)
+            val_auc = roc_auc_score(y_val, val_scores)
 
             print(
                 f"User {user} Session {session} "
-                f"Train EER: {train_eer}, "
-                f"Train AUC: {train_auc}, "
-                f"Test EER: {test_eer * 100:.2f}, "
-                f"AUC: {test_auc:.4f}"
+                f"Test EER: {val_eer * 100:.2f}, "
+                f"AUC: {val_auc:.4f}"
             )
             
-            results.append({"User": user, "Session": session, "EER": test_eer, "AUC": test_auc})
+            results.append({"User": user, "Session": session, "EER": val_eer, "AUC": val_auc})
 
             score_data = {
                 "test": {
-                    "scores": test_scores,
-                    "start": data_users.loc[test_idx, "start"].values,
-                    "end": data_users.loc[test_idx, "end"].values,
-                    "labels": data_users.loc[test_idx, "User_ID"].values,
-                    "session": data_users.loc[test_idx, "session"].values,
+                    "scores": val_scores,
+                    "start": data_users.loc[val_idx, "start"].values,
+                    "end": data_users.loc[val_idx, "end"].values,
+                    "labels": data_users.loc[val_idx, "User_ID"].values,
+                    "session": data_users.loc[val_idx, "session"].values,
                 },
             }
 
@@ -202,7 +195,7 @@ def train(modalities="all", model="GBM", split_type="intra", train_sessions=[1, 
             if split_type == "intra":
                 # Intra: Save one score file per USER / SESSION
                 base_dir = os.path.join(
-                    "model_scores",
+                    "model_scores/intra/",
                     model,
                     modality_name
                 )

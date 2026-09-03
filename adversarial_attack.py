@@ -39,12 +39,12 @@ def load_model(model_dir):
     return clf, scaler
 
 
-def get_eer_threshold(clf, X_test, y_test):
+def get_eer_threshold(clf, X_val, y_val):
     # Get model scores
-    scores = clf.predict_proba(X_test)[:, 1]
+    scores = clf.predict_proba(X_val)[:, 1]
 
     # Calculate fpr, tpr, and thresholds from ROC curve
-    fpr, tpr, thresholds = roc_curve(y_test, scores)
+    fpr, tpr, thresholds = roc_curve(y_val, scores)
     fnr = 1.0 - tpr
 
     # Index for EER threshold is where fpr and fnr are equal
@@ -75,9 +75,9 @@ def evaluate_user(data, split_list, model, modality, split_type, user, adversari
     user_split = None
 
     # Get the split for a given user
-    for split_user, session, train_idx, test_idx in split_list:
+    for split_user, session, train_idx, val_idx in split_list:
         if split_user == user:
-            user_split = (session, train_idx, test_idx)
+            user_split = (session, train_idx, val_idx)
             break
 
     if user_split is None:
@@ -85,7 +85,7 @@ def evaluate_user(data, split_list, model, modality, split_type, user, adversari
             f"Could not find split for user {user}"
         )
 
-    session, train_idx, test_idx = user_split
+    session, train_idx, val_idx = user_split
 
     # Load saved model and scaler
     if split_type == "inter":
@@ -101,16 +101,16 @@ def evaluate_user(data, split_list, model, modality, split_type, user, adversari
 
     clf, scaler = load_model(model_dir)
 
-    # Create test set
+    # Create val set
     feat_cols = data.columns.to_list()[4:]
-    X_test = data.loc[test_idx, feat_cols].values
-    y_test = (data.loc[test_idx, "User_ID"] == user).astype(int).values
+    X_val = data.loc[val_idx, feat_cols].values
+    y_val = (data.loc[val_idx, "User_ID"] == user).astype(int).values
 
-    # Scale test data using saved scaler
-    X_test_scaled = scaler.transform(X_test)
+    # Scale val data using saved scaler
+    X_val_scaled = scaler.transform(X_val)
 
-    # Get EER threshold and EER from test data
-    eer_threshold, eer = get_eer_threshold(clf, X_test_scaled, y_test)
+    # Get EER threshold and EER from val data
+    eer_threshold, eer = get_eer_threshold(clf, X_val_scaled, y_val)
 
     # Calculate ASR using the shared random vectors
     ASR = adversarial_inference(clf, adversarial_vectors, eer_threshold)
@@ -158,7 +158,7 @@ def main():
             for split_type in split_types:
                 print(f"\nEvaluating {model} / {modality} / {split_type}")
 
-                # Recreate original train/test splits
+                # Recreate original train/val splits
                 split_list = list(
                     get_splits(
                         data,

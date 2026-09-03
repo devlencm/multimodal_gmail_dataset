@@ -24,7 +24,7 @@ def compute_eer(y_true, y_score):
     return eer
 
 # Main evaluation
-def test_biLSTM(modality="mouse", data_path = './', model_path="./", split_method="inter", save_scores=True):
+def val_biLSTM(modality="mouse", data_path ='./', model_path="./", split_method="inter", save_scores=True):
     os.makedirs("model_scores", exist_ok=True)  
     os.makedirs("results", exist_ok=True)
 
@@ -118,15 +118,15 @@ def test_biLSTM(modality="mouse", data_path = './', model_path="./", split_metho
         val_scores = model.predict(X_val, batch_size=1024, verbose=0).ravel()
 
 
-        # Test metrics
-        test_auc = roc_auc_score(y_val, val_scores)
-        test_eer = compute_eer(y_val, val_scores)
+        # Val metrics
+        val_auc = roc_auc_score(y_val, val_scores)
+        val_eer = compute_eer(y_val, val_scores)
 
         # Print results
         if split_method == "intra":
-            print(f"User {user}, Session {session}: EER={test_eer:.4f}, AUC={test_auc:.4f}")
+            print(f"User {user}, Session {session}: EER={val_eer:.4f}, AUC={val_auc:.4f}")
         else:
-            print(f"User {user}: EER={test_eer:.4f}, AUC={test_auc:.4f}")
+            print(f"User {user}: EER={val_eer:.4f}, AUC={val_auc:.4f}")
 
         # Save metrics
         if split_method == "intra":
@@ -135,8 +135,8 @@ def test_biLSTM(modality="mouse", data_path = './', model_path="./", split_metho
                 {
                     "User": user,
                     "Session": session,
-                    "EER": test_eer,
-                    "AUC": test_auc
+                    "EER": val_eer,
+                    "AUC": val_auc
                 }
             )
 
@@ -145,8 +145,8 @@ def test_biLSTM(modality="mouse", data_path = './', model_path="./", split_metho
             results.append(
                 {
                     "User": user,
-                    "EER": test_eer,
-                    "AUC": test_auc
+                    "EER": val_eer,
+                    "AUC": val_auc
                 }
             )
 
@@ -230,8 +230,8 @@ def test_biLSTM(modality="mouse", data_path = './', model_path="./", split_metho
 if __name__ == "__main__":
     for modality in ["mouse", "keystroke", "scroll"]:
         for split in ["intra", "inter"]:
-            test_biLSTM(modality=modality,
-                        model_path=(f"{modality}_model_{split}/"),
-                        split_method=split,
-                        save_scores=True
-                        )
+            val_biLSTM(modality=modality,
+                       model_path=(f"{modality}_model_{split}/"),
+                       split_method=split,
+                       save_scores=True
+                       )

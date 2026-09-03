@@ -192,6 +192,6 @@ if __name__ == "__main__":
     np.save("../../features/lstm/keystroke_X.npy", X)
     np.save("../../features/lstm/keystroke_y.npy", y)
     np.save("../../features/lstm/keystroke_sessions.npy", all_sessions)
-    np.save("keystroke_window_times.npy", window_times)
+    np.save("../../features/lstm/keystroke_trajectory_times.npy", window_times)
 
     print(f"Saved {len(all_window_features)} keystroke windows.")

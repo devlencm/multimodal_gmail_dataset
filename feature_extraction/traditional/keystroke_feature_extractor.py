@@ -192,5 +192,5 @@ if __name__ == "__main__":
                         ignore_index=True
                     )
 
-    # buffer.to_csv("keystroke_features.csv", index=False)
+    buffer.to_csv("../../features/traditional/keystroke_features.csv", index=False)
     print(len(buffer))
