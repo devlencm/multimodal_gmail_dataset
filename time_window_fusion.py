@@ -20,6 +20,10 @@ def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="v
     modality_labels = {mod: [] for mod in weights}
     modality_scores = {mod: [] for mod in weights}
 
+    # Counters for total and dropped windows
+    total_windows = 0
+    dropped_windows = 0
+
     # Convert window size from minutes to ms
     window_size = window_min * 60 * 1000
 
@@ -51,6 +55,10 @@ def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="v
                 window_m_ids.append(m_id_val)
             else:
                 unique_m_ids = np.unique(window_m_ids)
+                total_windows += 1
+
+                if len(unique_m_ids) < 2:
+                    dropped_windows += 1
 
                 # Store modality-specific scores for this window
                 for mod in unique_m_ids:
@@ -93,6 +101,11 @@ def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="v
         if len(window_scores) > 0:
             unique_m_ids = np.unique(window_m_ids)
 
+            total_windows += 1
+
+            if len(unique_m_ids) < 2:
+                dropped_windows += 1
+
             # Store modality-specific scores for this window
             for mod in unique_m_ids:
                 mask_mod = np.array(window_m_ids) == mod
@@ -128,6 +141,8 @@ def window_and_fuse(m, weights, window_min=2, required_modalities=None, split="v
         np.array(all_scores),
         {mod: np.array(modality_labels[mod]) for mod in weights},
         {mod: np.array(modality_scores[mod]) for mod in weights},
+        total_windows,
+        dropped_windows
     )
 
 
@@ -250,6 +265,10 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
 
     fusion_results = []
 
+    # Track window dropout across all users
+    total_windows_all = 0
+    dropped_windows_all = 0
+
     # Iterate over each user and fuse scores for both single and multiple modalities
     for user in tqdm.tqdm(all_users, desc="Inter-session fusion"):
         user_int = int(user)
@@ -275,9 +294,13 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
         fused_data = merge_modalities(user, modalities)
 
         # Get the scores + labels for each N-minute window (single and multi modality)
-        labels_val, scores_val, modality_labels_val, modality_scores_val = (
+        labels_val, scores_val, modality_labels_val, modality_scores_val, total_windows, dropped_windows = (
             window_and_fuse(fused_data, user_weight_dict, window_min, split="test")
         )
+
+        # Accumulate window counts across users
+        total_windows_all += total_windows
+        dropped_windows_all += dropped_windows
 
         # For each individual modality, get their scores and labels, fuse
         for modality_name in modalities:
@@ -323,7 +346,7 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
 
         df = pd.concat([df, mean_row], ignore_index=True)
 
-        df.to_csv(f"{modality_name}_results_{model}_{window_min}_inter_test.csv", index=False)
+        # df.to_csv(f"{modality_name}_results_{model}_{window_min}_inter_test.csv", index=False)
 
     df_fusion = pd.DataFrame(fusion_results)
 
@@ -340,7 +363,53 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
 
         df_fusion = pd.concat([df_fusion, mean_row], ignore_index=True)
 
-    df_fusion.to_csv(f"Fusion_results_{model}_{window_min}_inter_test.csv", index=False)
+    # df_fusion.to_csv(f"Fusion_results_{model}_{window_min}_inter_test.csv", index=False)
+
+    # Calculate and save overall window dropout statistics
+    dropped_percentage = (
+        100 * dropped_windows_all / total_windows_all
+        if total_windows_all > 0
+        else 0
+    )
+
+    dropout_row = pd.DataFrame(
+        [
+            {
+                "Window_Min": window_min,
+                "Total_Windows": total_windows_all,
+                "Dropped_Windows": dropped_windows_all,
+                "Dropped_Percentage": dropped_percentage,
+            }
+        ]
+    )
+
+    os.makedirs("results", exist_ok=True)
+
+    dropout_file = f"results/window_dropout_inter_{model}.csv"
+
+    if os.path.exists(dropout_file):
+        dropout_df = pd.read_csv(dropout_file)
+
+        dropout_df = dropout_df[
+            dropout_df["Window_Min"] != window_min
+        ]
+
+        dropout_df = pd.concat(
+            [dropout_df, dropout_row],
+            ignore_index=True
+        )
+    else:
+        dropout_df = dropout_row
+
+    dropout_df = dropout_df.sort_values("Window_Min")
+
+    dropout_df.to_csv(dropout_file, index=False)
+
+    print(
+        f"\nInter-session | {window_min} min: "
+        f"{dropped_windows_all}/{total_windows_all} windows dropped "
+        f"({dropped_percentage:.2f}%)"
+    )
 
     plt.figure(figsize=(7, 6))
 
@@ -364,7 +433,6 @@ def multi_modal_fusion_inter(window_min=1, model="GBM"):
 
 
 # Intra-session loading
-
 def load_intra_modalities(model="RF"):
     modalities = {}
 
@@ -460,6 +528,10 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
     # Multimodal fusion results
     fusion_results = []
 
+    # Track window dropout across all users and sessions
+    total_windows_all = 0
+    dropped_windows_all = 0
+
     # Iterate over users
     for user in tqdm.tqdm(all_users, desc="Intra-session fusion"):
         user_int = int(user)
@@ -502,11 +574,15 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
             fused_data = merge_modalities_intra(user, session, modalities)
 
             # Get the scores + labels for each N-minute window (single and multi modality)
-            labels_val, scores_val, modality_labels_val, modality_scores_val = (
+            labels_val, scores_val, modality_labels_val, modality_scores_val, total_windows, dropped_windows = (
                 window_and_fuse(
                     fused_data, user_weight_dict, window_min, split="test"
                 )
             )
+
+            # Accumulate window counts across all users and sessions
+            total_windows_all += total_windows
+            dropped_windows_all += dropped_windows
 
             # For each individual modality, get their scores and labels, fuse
             for modality_name in modalities:
@@ -563,7 +639,7 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
             ]
         )
         df = pd.concat([df, mean_row], ignore_index=True)
-        df.to_csv(f"results/{modality_name.lower()}_fusion/{modality_name}_results_{model}_{window_min}_intra_test.csv", index=False)
+        # df.to_csv(f"results/{modality_name.lower()}_fusion/{modality_name}_results_{model}_{window_min}_intra_test.csv", index=False)
 
     # Save session-level fusion results
     df_fusion = pd.DataFrame(fusion_results)
@@ -578,7 +654,53 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
         ]
     )
     df_fusion = pd.concat([df_fusion, mean_row], ignore_index=True)
-    df_fusion.to_csv(f"results/multimodal/Fusion_results_{model}_{window_min}_intra_test.csv", index=False)
+    # df_fusion.to_csv(f"results/multimodal/Fusion_results_{model}_{window_min}_intra_test.csv", index=False)
+
+    # Calculate and save overall window dropout statistics
+    dropped_percentage = (
+        100 * dropped_windows_all / total_windows_all
+        if total_windows_all > 0
+        else 0
+    )
+
+    dropout_row = pd.DataFrame(
+        [
+            {
+                "Window_Min": window_min,
+                "Total_Windows": total_windows_all,
+                "Dropped_Windows": dropped_windows_all,
+                "Dropped_Percentage": dropped_percentage,
+            }
+        ]
+    )
+
+    os.makedirs("results", exist_ok=True)
+
+    dropout_file = f"results/window_dropout_intra_{model}.csv"
+
+    if os.path.exists(dropout_file):
+        dropout_df = pd.read_csv(dropout_file)
+
+        dropout_df = dropout_df[
+            dropout_df["Window_Min"] != window_min
+        ]
+
+        dropout_df = pd.concat(
+            [dropout_df, dropout_row],
+            ignore_index=True
+        )
+    else:
+        dropout_df = dropout_row
+
+    dropout_df = dropout_df.sort_values("Window_Min")
+
+    dropout_df.to_csv(dropout_file, index=False)
+
+    print(
+        f"\nIntra-session | {window_min} min: "
+        f"{dropped_windows_all}/{total_windows_all} windows dropped "
+        f"({dropped_percentage:.2f}%)"
+    )
 
     # ROC Plot
     plt.figure(figsize=(7, 6))
@@ -605,9 +727,9 @@ def multi_modal_fusion_intra(window_min=1, model="SVM"):
 # RUN FUSION EXPERIMENTS
 
 # Inter-session
-# for i in range(1, 6):
-#     multi_modal_fusion_inter(window_min=i, model="RF")
+for i in range(1, 6):
+    multi_modal_fusion_inter(window_min=i, model="RF")
 
 # Intra-session
-for i in range(1, 6):
-    multi_modal_fusion_intra(window_min=i, model="SVM")
+# for i in range(1, 6):
+#     multi_modal_fusion_intra(window_min=i, model="SVM")

@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import pingouin as pg
 from scipy.stats import shapiro
+from statsmodels.stats.multitest import multipletests
 
 
 # ID groups
@@ -230,7 +231,7 @@ def bias_corr(results_path):
 
     print(device_tests.to_string(index=False))
 
-    # RETURN RESULTS
+    # Return results
     return {
         "results": results,
         "race_tests": race_tests,
@@ -252,7 +253,7 @@ analyses = {}
 for modality in modalities:
 
     filename = (
-        f"results/"
+        f"results/single_sample/"
         f"user_metrics_GBM_{modality}_inter.csv"
     )
 
@@ -263,3 +264,83 @@ for modality in modalities:
     print("#" * 90)
 
     analyses[modality] = bias_corr(filename)
+
+
+# APPLY HOLM CORRECTION
+race_tests_all = pd.concat(
+    [
+        analyses[modality]["race_tests"].assign(modality=modality)
+        for modality in modalities
+    ],
+    ignore_index=True
+)
+
+gender_tests_all = pd.concat(
+    [
+        analyses[modality]["gender_tests"].assign(modality=modality)
+        for modality in modalities
+    ],
+    ignore_index=True
+)
+
+device_tests_all = pd.concat(
+    [
+        analyses[modality]["device_tests"].assign(modality=modality)
+        for modality in modalities
+    ],
+    ignore_index=True
+)
+
+
+race_reject, race_p_holm, _, _ = multipletests(
+    race_tests_all["p_value"],
+    alpha=0.05,
+    method="holm"
+)
+
+gender_reject, gender_p_holm, _, _ = multipletests(
+    gender_tests_all["p_value"],
+    alpha=0.05,
+    method="holm"
+)
+
+device_reject, device_p_holm, _, _ = multipletests(
+    device_tests_all["p_value"],
+    alpha=0.05,
+    method="holm"
+)
+
+
+race_tests_all["p_holm"] = race_p_holm
+race_tests_all["significant_holm"] = race_reject
+
+gender_tests_all["p_holm"] = gender_p_holm
+gender_tests_all["significant_holm"] = gender_reject
+
+device_tests_all["p_holm"] = device_p_holm
+device_tests_all["significant_holm"] = device_reject
+
+
+# PRINT HOLM-CORRECTED RESULTS
+print("\n")
+print("=" * 90)
+print("RACE — HOLM-CORRECTED RESULTS")
+print("=" * 90)
+
+print(race_tests_all.to_string(index=False))
+
+
+print("\n")
+print("=" * 90)
+print("GENDER — HOLM-CORRECTED RESULTS")
+print("=" * 90)
+
+print(gender_tests_all.to_string(index=False))
+
+
+print("\n")
+print("=" * 90)
+print("DEVICE — HOLM-CORRECTED RESULTS")
+print("=" * 90)
+
+print(device_tests_all.to_string(index=False))
